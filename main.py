@@ -72,4 +72,3 @@ async def update_prices():
             await asyncio.sleep(10)  # エラー時にも少し待つ
 
 bot.run(TOKEN)
-
