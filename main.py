@@ -7,7 +7,6 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
-
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("Please set DISCORD_BOT_TOKEN in the Secrets tab")
@@ -47,28 +46,31 @@ async def on_ready():
 
 @tasks.loop(minutes=5)
 async def update_prices():
-    for symbol, coingecko_id in TOKEN_IDS.items():
-        try:
-            logger.info(f"[DEBUG] Fetching price for {coingecko_id}")
-            url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd,jpy"
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
-            usd_price = data[coingecko_id]['usd']
-            jpy_price = data[coingecko_id]['jpy']
+    try:
+        # 一括でリクエスト
+        ids = ','.join(TOKEN_IDS.values())
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies=usd,jpy"
+        logger.info(f"[DEBUG] Fetching prices for: {ids}")
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
 
-            emoji = TOKEN_EMOJIS.get(symbol, '')
-            new_name = f"{emoji} {symbol}: ${usd_price:.3f} / ¥{jpy_price:.2f}"
-
-            channel_id = CHANNEL_IDS[symbol]
-            channel = await bot.fetch_channel(channel_id)
-            await channel.edit(name=new_name)
-            logger.info(f"Updated channel {symbol}: {new_name}")
-
-            await asyncio.sleep(5)  # 少し待つことでレート制限対策
-
-        except Exception as e:
-            logger.error(f"[ERROR] Failed to update channel {symbol}: {e}")
-            await asyncio.sleep(10)  # エラー時にも少し待つ
+        for symbol, coingecko_id in TOKEN_IDS.items():
+            try:
+                usd_price = data[coingecko_id]['usd']
+                jpy_price = data[coingecko_id]['jpy']
+                emoji = TOKEN_EMOJIS.get(symbol, '')
+                new_name = f"{emoji} {symbol}: ${usd_price:.3f} / ¥{jpy_price:.2f}"
+                channel_id = CHANNEL_IDS[symbol]
+                channel = await bot.fetch_channel(channel_id)
+                await channel.edit(name=new_name)
+                logger.info(f"Updated channel {symbol}: {new_name}")
+                await asyncio.sleep(5)  # 少し待機してレート制限回避
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to update {symbol}: {e}")
+                await asyncio.sleep(10)
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to fetch token prices: {e}")
+        await asyncio.sleep(10)
 
 bot.run(TOKEN)
