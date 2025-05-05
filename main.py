@@ -5,7 +5,7 @@ import asyncio
 import os
 from discord.ext import tasks
 
-TOKEN = 'YOUR_DISCORD_BOT_TOKEN'
+TOKEN = 'MTM2Nzc1MjAxMDUyNjM2MzY4OA.GGBLbl.NUln4ZJJas3uQN-V9TUOkzwZBEYDoEOa4d0bzM'
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
