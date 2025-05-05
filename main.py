@@ -1,3 +1,9 @@
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # .envファイルの読み込み
+TOKEN = os.getenv("DISCORD_TOKEN")
+
 import discord
 import requests
 import time
