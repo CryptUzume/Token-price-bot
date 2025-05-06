@@ -28,7 +28,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"{bot.user.name} has connected to Discord!")
-    update_prices.start()
+    await asyncio.sleep(60)
 
 @tasks.loop(minutes=5)
 async def update_prices():
