@@ -48,12 +48,19 @@ async def on_ready():
     logger.info(f"Logged in as {bot.user}")
     update_prices.start()
 
-@tasks.loop(minutes=5)
+@tasks.loop(minutes=5)  # 5分ごとに更新
 async def update_prices():
     try:
         # CoinGecko APIを一度にまとめてリクエスト
         url = f"https://api.coingecko.com/api/v3/simple/price?ids=stepn,green-satoshi-token,go-game-token&vs_currencies=usd,jpy"
         response = requests.get(url)
+        
+        if response.status_code == 429:
+            # API制限に達した場合、リトライするためにスリープを追加
+            logger.error("API limit reached, sleeping for 60 seconds...")
+            await asyncio.sleep(60)  # 1分間スリープ
+            return
+        
         response.raise_for_status()  # APIリクエストに失敗した場合エラーを投げる
         data = response.json()
 
