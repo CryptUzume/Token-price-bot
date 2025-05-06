@@ -57,7 +57,7 @@ async def update_prices():
             usd_price = price_info.get("usd")
             jpy_price = price_info.get("jpy")
             if usd_price is not None and jpy_price is not None:
-                new_name = f"{emoji} {usd_price:.4f} USD / {jpy_price:.2f} JPY"
+                new_name = f"{emoji} {usd_price:.3f} USD / {jpy_price:.2f} JPY"
                 try:
                     channel = await bot.fetch_channel(channel_id)
                     await channel.edit(name=new_name)
