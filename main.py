@@ -1,68 +1,66 @@
-import os
 import discord
-import requests
-from discord.ext import commands, tasks
-from dotenv import load_dotenv
-import time
-
-load_dotenv()
-
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-CHANNEL_IDS = {
-    "stepn": 1367887693446643804,  # GMT 🟡
-    "green-satoshi-token": 1367887745086787594,  # GST ⚪
-    "Go-Game-token": 1367888140534153266  # GGT 🟣
-}
-EMOJIS = {
-    "stepn": "🟡",
-    "green-satoshi-token": "⚪",
-    "Go-Game-token": "🟣"
-}
-
-API_URL = "https://api.coingecko.com/api/v3/simple/price"
-HEADERS = {"Accept": "application/json"}
+from discord.ext import tasks, commands
+import aiohttp
+import asyncio
+import os
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
+
+# ボイスチャンネルID
+CHANNEL_IDS = {
+    "GMT": 1367887693446643804,
+    "GST": 1367887745086787594,
+    "GGT": 1367888140534153266,
+}
+
+# CoinGecko API用ID
+COINGECKO_IDS = {
+    "GMT": "stepn",
+    "GST": "green-satoshi-token",
+    "GGT": "go-game-token"
+}
+
+# トークン絵文字
+EMOJIS = {
+    "GMT": "🟡",
+    "GST": "⚪",
+    "GGT": "🟣"
+}
+
 @bot.event
 async def on_ready():
-    print(f"{bot.user.name} has connected to Discord!")
-    await asyncio.sleep(60)
+    print(f"Logged in as {bot.user}")
+    update_prices.start()
 
 @tasks.loop(minutes=5)
 async def update_prices():
-    token_ids = ",".join(CHANNEL_IDS.keys())
-    params = {
-        "ids": token_ids,
-        "vs_currencies": "usd,jpy"
-    }
+    print("Updating prices...")
+    async with aiohttp.ClientSession() as session:
+        for token in ["GMT", "GST", "GGT"]:
+            coingecko_id = COINGECKO_IDS[token]
+            url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd,jpy"
+            try:
+                async with session.get(url) as response:
+                    data = await response.json()
+                    usd = data[coingecko_id]['usd']
+                    jpy = data[coingecko_id]['jpy']
 
-    try:
-        response = requests.get(API_URL, headers=HEADERS, params=params)
-        if response.status_code == 429:
-            print("429 Too Many Requests - sleeping for 60 seconds...")
-            time.sleep(60)
-            return
-        response.raise_for_status()
-        prices = response.json()
-    except Exception as e:
-        print(f"Failed to fetch prices: {e}")
-        return
+                    # 金額のフォーマット調整
+                    price_text = f"{EMOJIS[token]}{token}: ${usd:.4f} / ¥{jpy:.2f}"
 
-    for token_id, channel_id in CHANNEL_IDS.items():
-        emoji = EMOJIS.get(token_id, "")
-        price_info = prices.get(token_id)
-        if price_info:
-            usd_price = price_info.get("usd")
-            jpy_price = price_info.get("jpy")
-            if usd_price is not None and jpy_price is not None:
-                new_name = f"{emoji} {usd_price:.3f} USD / {jpy_price:.2f} JPY"
-                try:
-                    channel = await bot.fetch_channel(channel_id)
-                    await channel.edit(name=new_name)
-                    print(f"Updated {token_id} channel to: {new_name}")
-                except Exception as e:
-                    print(f"Failed to update channel {channel_id}: {e}")
+                    # チャンネル名更新
+                    channel = bot.get_channel(CHANNEL_IDS[token])
+                    if channel:
+                        await channel.edit(name=price_text)
+                        await asyncio.sleep(2)  # API制限対策のディレイ
+                    else:
+                        print(f"Channel not found for {token}")
+            except Exception as e:
+                print(f"Error updating {token}: {e}")
 
-bot.run(TOKEN)
+# 起動
+if __name__ == "__main__":
+    asyncio.run(bot.start(TOKEN))
