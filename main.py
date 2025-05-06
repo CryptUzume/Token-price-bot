@@ -35,8 +35,8 @@ TOKEN_EMOJIS = {
     'GGT': '🟣'
 }
 
-# ログ設定
-logging.basicConfig(level=logging.INFO)
+# ログ設定（DEBUGレベルで詳細に出力）
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Discordのインテント設定
@@ -45,25 +45,26 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    logger.info(f"Logged in as {bot.user}")
+    logger.info(f"[READY] Logged in as {bot.user} (ID: {bot.user.id})")
     update_prices.start()
 
-@tasks.loop(minutes=5)  # 5分ごとに更新
+@tasks.loop(minutes=5)
 async def update_prices():
     try:
-        # CoinGecko APIを一度にまとめてリクエスト
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids=stepn,green-satoshi-token,go-game-token&vs_currencies=usd,jpy"
+        logger.debug("[UPDATE] Fetching prices from CoinGecko API...")
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=stepn,green-satoshi-token,go-game-token&vs_currencies=usd,jpy"
         response = requests.get(url)
-        
+
+        logger.debug(f"[HTTP] Response status code: {response.status_code}")
         if response.status_code == 429:
-            # API制限に達した場合、リトライするためにスリープを追加
-            retry_after = int(response.headers.get("Retry-After", 60))  # Retry-Afterの時間を取得
-            logger.error(f"API limit reached, retrying after {retry_after} seconds...")
-            await asyncio.sleep(retry_after)  # 再試行までスリープ
+            retry_after = int(response.headers.get("Retry-After", 60))
+            logger.warning(f"[RATE LIMIT] API limit reached, retrying after {retry_after} seconds...")
+            await asyncio.sleep(retry_after)
             return
-        
-        response.raise_for_status()  # APIリクエストに失敗した場合エラーを投げる
+
+        response.raise_for_status()
         data = response.json()
+        logger.debug(f"[DATA] Received data: {data}")
 
         for symbol, coingecko_id in TOKEN_IDS.items():
             usd_price = data[coingecko_id]['usd']
@@ -71,15 +72,17 @@ async def update_prices():
             emoji = TOKEN_EMOJIS.get(symbol, '')
             new_name = f"{emoji} {symbol}: ${usd_price:.3f} / ¥{jpy_price:.2f}"
 
+            logger.info(f"[RENAME] Preparing to update channel for {symbol} with name: {new_name}")
             channel_id = CHANNEL_IDS[symbol]
             channel = await bot.fetch_channel(channel_id)
             await channel.edit(name=new_name)
-            logger.info(f"Updated channel {symbol}: {new_name}")
+            logger.info(f"[SUCCESS] Updated channel {symbol} (ID: {channel_id}) to: {new_name}")
 
-            await asyncio.sleep(1)  # 少し待つことでレート制限対策
+            await asyncio.sleep(1)  # レート制限対策
 
     except Exception as e:
         logger.error(f"[ERROR] Failed to update channels: {e}")
-        await asyncio.sleep(10)  # エラー時にも少し待つ
+        await asyncio.sleep(10)
 
 bot.run(TOKEN)
+
