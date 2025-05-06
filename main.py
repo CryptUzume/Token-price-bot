@@ -1,107 +1,68 @@
 import os
-import logging
+import discord
 import requests
-import asyncio
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+import time
 
-# ログ設定
-logging.basicConfig(level=logging.INFO)
+load_dotenv()
 
-# トークンとチャンネルIDの設定
-DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
-
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 CHANNEL_IDS = {
-    "stepn": {"id": 1367887693446643804, "emoji": "🟡", "symbol": "GMT"},
-    "green-satoshi-token": {"id": 1367887745086787594, "emoji": "⚪", "symbol": "GST"},
-    "go-game-token": {"id": 1367888140534153266, "emoji": "🟣", "symbol": "GGT"},
+    "stepn": 1367887693446643804,  # GMT 🟡
+    "green-satoshi-token": 1367887745086787594,  # GST ⚪
+    "Go-Game-token": 1367888140534153266  # GGT 🟣
+}
+EMOJIS = {
+    "stepn": "🟡",
+    "green-satoshi-token": "⚪",
+    "Go-Game-token": "🟣"
 }
 
-# CoinGecko APIエンドポイント
-COINGECKO_API_URL = "https://api.coingecko.com/api/v3/simple/price"
+API_URL = "https://api.coingecko.com/api/v3/simple/price"
+HEADERS = {"Accept": "application/json"}
 
-# Bot設定
-intents = commands.Intents.default()
+intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-
-async def fetch_prices():
-    ids = ",".join(CHANNEL_IDS.keys())
-    params = {
-        "ids": ids,
-        "vs_currencies": "usd,jpy"
-    }
-
-    retry_wait = 30  # 初回リトライ待機時間（秒）
-    max_retries = 5
-
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(COINGECKO_API_URL, params=params, timeout=10)
-
-            if response.status_code == 200:
-                return response.json()
-
-            elif response.status_code == 429:
-                logging.warning(f"[RATE LIMIT] 429 Too Many Requests - Retry in {retry_wait} sec")
-                await asyncio.sleep(retry_wait)
-                retry_wait *= 2  # 指数バックオフ
-
-            else:
-                logging.error(f"[ERROR] API returned status code: {response.status_code}")
-                break
-
-        except Exception as e:
-            logging.error(f"[EXCEPTION] Failed to fetch prices: {e}")
-            break
-
-    return None
-
-
-@tasks.loop(minutes=5)
-async def update_channel_names():
-    logging.info("[START] Updating token prices...")
-
-    prices = await fetch_prices()
-    if not prices:
-        logging.error("[FAILED] No price data fetched.")
-        return
-
-    for token_id, data in CHANNEL_IDS.items():
-        price_data = prices.get(token_id)
-        if not price_data:
-            logging.warning(f"[MISSING DATA] No price found for {token_id}")
-            continue
-
-        usd = price_data.get("usd")
-        jpy = price_data.get("jpy")
-
-        if usd is None or jpy is None:
-            logging.warning(f"[INCOMPLETE] Missing USD or JPY price for {token_id}")
-            continue
-
-        name = f"{data['emoji']} {data['symbol']} ${usd:.4f} ¥{jpy:.2f}"
-
-        try:
-            channel = bot.get_channel(data["id"])
-            if channel:
-                await channel.edit(name=name)
-                logging.info(f"[SUCCESS] Updated {data['symbol']} to {name}")
-            else:
-                logging.error(f"[NOT FOUND] Channel ID {data['id']} not found")
-        except Exception as e:
-            logging.error(f"[EXCEPTION] Failed to update channel {data['id']}: {e}")
-
 
 @bot.event
 async def on_ready():
-    logging.info(f"Bot logged in as {bot.user}")
-    update_channel_names.start()
+    print(f"{bot.user.name} has connected to Discord!")
+    update_prices.start()
 
+@tasks.loop(minutes=5)
+async def update_prices():
+    token_ids = ",".join(CHANNEL_IDS.keys())
+    params = {
+        "ids": token_ids,
+        "vs_currencies": "usd,jpy"
+    }
 
-if __name__ == "__main__":
-    load_dotenv()
-    if not DISCORD_TOKEN:
-        logging.error("DISCORD_TOKEN is not set in environment variables.")
-    else:
-        bot.run(DISCORD_TOKEN)
+    try:
+        response = requests.get(API_URL, headers=HEADERS, params=params)
+        if response.status_code == 429:
+            print("429 Too Many Requests - sleeping for 60 seconds...")
+            time.sleep(60)
+            return
+        response.raise_for_status()
+        prices = response.json()
+    except Exception as e:
+        print(f"Failed to fetch prices: {e}")
+        return
+
+    for token_id, channel_id in CHANNEL_IDS.items():
+        emoji = EMOJIS.get(token_id, "")
+        price_info = prices.get(token_id)
+        if price_info:
+            usd_price = price_info.get("usd")
+            jpy_price = price_info.get("jpy")
+            if usd_price is not None and jpy_price is not None:
+                new_name = f"{emoji} {usd_price:.4f} USD / {jpy_price:.2f} JPY"
+                try:
+                    channel = await bot.fetch_channel(channel_id)
+                    await channel.edit(name=new_name)
+                    print(f"Updated {token_id} channel to: {new_name}")
+                except Exception as e:
+                    print(f"Failed to update channel {channel_id}: {e}")
+
+bot.run(TOKEN)
