@@ -57,8 +57,9 @@ async def update_prices():
         
         if response.status_code == 429:
             # API制限に達した場合、リトライするためにスリープを追加
-            logger.error("API limit reached, sleeping for 60 seconds...")
-            await asyncio.sleep(60)  # 1分間スリープ
+            retry_after = int(response.headers.get("Retry-After", 60))  # Retry-Afterの時間を取得
+            logger.error(f"API limit reached, retrying after {retry_after} seconds...")
+            await asyncio.sleep(retry_after)  # 再試行までスリープ
             return
         
         response.raise_for_status()  # APIリクエストに失敗した場合エラーを投げる
